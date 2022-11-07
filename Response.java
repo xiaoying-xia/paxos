@@ -12,12 +12,14 @@ public class Response implements Serializable {
     boolean accept;
     int id;
     Object value;
+    int done; // max seq of the instance done
 
     // Your constructor and methods here
 
-    public Response(int id, Object value, boolean accept) {
+    public Response(int id, Object value, boolean accept, int done) {
         this.id = id;
         this.value = value;
         this.accept = accept;
+        this.done = done;
     }
 }

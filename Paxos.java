@@ -5,6 +5,7 @@ import java.rmi.registry.Registry;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -185,7 +186,11 @@ public class Paxos implements PaxosRMI, Runnable{
             Object valueA = null;
             for (int i = 0; i < totalServers; i++) {
                 Response prepare_OK = Call("Prepare", prepare, i);
-                if (prepare_OK != null) maxId = Math.max(prepare_OK.id, maxId);
+
+                if (prepare_OK != null) {
+                    this.done[i] = prepare_OK.done;
+                    maxId = Math.max(prepare_OK.id, maxId);
+                }
 
                 if (prepare_OK != null && prepare_OK.accept) {
 //                    if (seq == 1 && this.me == 0) {
@@ -217,6 +222,7 @@ public class Paxos implements PaxosRMI, Runnable{
                     } else {
                         accept_OK = this.Accept(accept); // Call self through direct function call
                     }
+                    if (accept_OK != null) this.done[i] = accept_OK.done;
                     if (accept_OK != null && accept_OK.accept) countAccept++;
                 }
                 // Send Decide(v) to all
@@ -252,8 +258,8 @@ public class Paxos implements PaxosRMI, Runnable{
 //        }
         if (req.id > this.status.get(req.seq).promisedId) {
             this.status.get(req.seq).promisedId = req.id;
-            prepare_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, true);
-        } else prepare_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, false); // Return highest id seen so far
+            prepare_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, true, this.done[this.me]);
+        } else prepare_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, false, this.done[this.me]); // Return highest id seen so far
         mutex.unlock();
         return prepare_OK;
 
@@ -271,8 +277,8 @@ public class Paxos implements PaxosRMI, Runnable{
         if (req.id >= this.status.get(req.seq).promisedId) {
             this.status.get(req.seq).promisedId = req.id;
             this.status.get(req.seq).value = req.value;
-            accept_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, true);
-        } else accept_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, false); // Return highest id seen so far
+            accept_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, true, this.done[this.me]);
+        } else accept_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, false, this.done[this.me]); // Return highest id seen so far
         mutex.unlock();
         return accept_OK;
     }
@@ -281,9 +287,10 @@ public class Paxos implements PaxosRMI, Runnable{
         // your code here
         mutex.lock();
         if (!this.status.containsKey(req.seq)) {
-            System.out.println("Entry Set for seq: " + req.seq + ", idx: " + this.me + " created");
+//            System.out.println("Entry Set for seq: " + req.seq + ", idx: " + this.me + " created");
             this.status.put(req.seq, new PaxosState(req.seq, null, State.Pending, -1));
         }
+        this.status.get(req.seq).promisedId = req.id;
         this.status.get(req.seq).value = req.value;
         this.status.get(req.seq).state = State.Decided;
         mutex.unlock();
@@ -311,12 +318,12 @@ public class Paxos implements PaxosRMI, Runnable{
      */
     public int Max(){
         // Your code here
-        int max = -1;
-        if (this.status.isEmpty()) return max;
+        int maxSeq = -1;
+        if (this.status.isEmpty()) return maxSeq;
         for (int i : this.status.keySet()) {
-            max = Math.max(i, max);
+            maxSeq = Math.max(i, maxSeq);
         }
-        return max;
+        return maxSeq;
     }
 
     /**
@@ -350,17 +357,20 @@ public class Paxos implements PaxosRMI, Runnable{
     public int Min(){
         // Your code here
         // Find out the minimum done value
-        int min = Integer.MIN_VALUE;
+        int minSeq = Integer.MAX_VALUE;
         for (int seqDone : this.done) {
-            min = Math.min(seqDone, min);
+            minSeq = Math.min(seqDone, minSeq);
         }
 
         // Discard instances with a seq lower than min
-        for (int key : this.status.keySet()) {
-            if (key <= min) this.status.remove(key);
+        Set<Map.Entry<Integer, PaxosState>> entries = this.status.entrySet();
+        for (Map.Entry<Integer, PaxosState> entry : entries) {
+            if (entry.getKey() <= minSeq) {
+                this.status.remove(entry);
+            }
         }
 
-        return min + 1;
+        return minSeq + 1;
     }
 
 
@@ -375,7 +385,9 @@ public class Paxos implements PaxosRMI, Runnable{
     public retStatus Status(int seq){
         // Your code here
         retStatus ret = null;
-        if (!this.status.containsKey(seq)) {
+        if (seq < Min()) {
+            ret = new retStatus(State.Forgotten, null);
+        } else if (!this.status.containsKey(seq)) {
             ret = new retStatus(State.Pending, null);
         } else {
             ret = new retStatus(this.status.get(seq).state, this.status.get(seq).value);
