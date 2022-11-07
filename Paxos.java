@@ -2,10 +2,7 @@ package paxos;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.server.UnicastRemoteObject;
 import java.rmi.registry.Registry;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -358,19 +355,26 @@ public class Paxos implements PaxosRMI, Runnable{
         // Your code here
         // Find out the minimum done value
         int minSeq = Integer.MAX_VALUE;
-        for (int seqDone : this.done) {
-            minSeq = Math.min(seqDone, minSeq);
-        }
 
-        // Discard instances with a seq lower than min
-        Set<Map.Entry<Integer, PaxosState>> entries = this.status.entrySet();
-        for (Map.Entry<Integer, PaxosState> entry : entries) {
-            if (entry.getKey() <= minSeq) {
-                this.status.remove(entry);
+        try {
+            mutex.lock();
+            for (int seqDone : this.done) {
+                minSeq = Math.min(seqDone, minSeq);
             }
+            minSeq += 1;
+
+            // Discard instances with a seq lower than min
+            // Use iterator to avoid ConcurrentModificationException
+            Iterator<Map.Entry<Integer, PaxosState>> it = this.status.entrySet().iterator();
+            while (it.hasNext()) {
+                if (it.next().getKey() < minSeq) it.remove();
+            }
+        } finally {
+            mutex.unlock();
+
         }
 
-        return minSeq + 1;
+        return minSeq;
     }
 
 
