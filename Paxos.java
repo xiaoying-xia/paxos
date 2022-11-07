@@ -45,7 +45,10 @@ public class Paxos implements PaxosRMI, Runnable{
 
     // Your data here
     HashMap<Integer, PaxosState> status; // vary for different seq (or Paxos Procedures)
-//    int seq; // round of Paxos
+
+    // Contains local memory of max seq of peers that consensus has been reached
+    // done[me] = max seq of this
+    int[] done;
 
     /**
      * Call the constructor to create a Paxos peer.
@@ -63,6 +66,10 @@ public class Paxos implements PaxosRMI, Runnable{
 
         // Your initialization code here
         this.status = new HashMap<>();
+        this.done = new int[peers.length];
+        for (int i = 0; i < peers.length; i++) {
+            done[i] = -1;
+        }
 
         // register peers, do not modify this part
         try{
@@ -131,6 +138,7 @@ public class Paxos implements PaxosRMI, Runnable{
 
     public void Start(int seq, Object value){ // seq: round
         // Your code here
+//        if (seq < this.min)
         mutex.lock();
         try {
             if (!this.status.containsKey(seq)) {
@@ -163,8 +171,9 @@ public class Paxos implements PaxosRMI, Runnable{
 
 //        mutex.lock(); // Lock this.status.get(seq) because we need to write it
         while (this.status.get(seq).state != State.Decided) {
+            if (this.isDead()) break;
             // Choose id
-            while (id <= maxId || id == this.me) {
+            while (id <= maxId) {
                 id += totalServers;
             }
             this.status.get(seq).id = id;
@@ -202,7 +211,12 @@ public class Paxos implements PaxosRMI, Runnable{
                 Request accept = new Request(seq, this.status.get(seq).id, this.status.get(seq).value);
                 int countAccept = 0;
                 for (int i = 0; i < totalServers; i++) {
-                    Response accept_OK = Call("Accept", accept, i);
+                    Response accept_OK = null;
+                    if (i != this.me) {
+                        accept_OK = Call("Accept", accept, i); // Call through RMI
+                    } else {
+                        accept_OK = this.Accept(accept); // Call self through direct function call
+                    }
                     if (accept_OK != null && accept_OK.accept) countAccept++;
                 }
                 // Send Decide(v) to all
@@ -224,13 +238,8 @@ public class Paxos implements PaxosRMI, Runnable{
     // RMI handler
     public Response Prepare(Request req){
         // your code here
+        mutex.lock(); // Lock this
         // Create Entry Set for myself if I don't have one
-
-//        synchronized (this.status.get(req.seq)) {
-//
-//        }
-        mutex.lock();
-
         if (!this.status.containsKey(req.seq)) {
 //            System.out.println("Entry Set for seq: " + req.seq + ", idx: " + this.me + " created");
             this.status.put(req.seq, new PaxosState(req.seq, null, State.Pending, -1));
@@ -244,7 +253,7 @@ public class Paxos implements PaxosRMI, Runnable{
         if (req.id > this.status.get(req.seq).promisedId) {
             this.status.get(req.seq).promisedId = req.id;
             prepare_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, true);
-        } else prepare_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, false);
+        } else prepare_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, false); // Return highest id seen so far
         mutex.unlock();
         return prepare_OK;
 
@@ -263,7 +272,7 @@ public class Paxos implements PaxosRMI, Runnable{
             this.status.get(req.seq).promisedId = req.id;
             this.status.get(req.seq).value = req.value;
             accept_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, true);
-        } else accept_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, false);
+        } else accept_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, false); // Return highest id seen so far
         mutex.unlock();
         return accept_OK;
     }
@@ -289,6 +298,9 @@ public class Paxos implements PaxosRMI, Runnable{
      */
     public void Done(int seq) {
         // Your code here
+        if (done[this.me] < seq) {
+            done[this.me] = seq;
+        }
     }
 
 
@@ -299,7 +311,12 @@ public class Paxos implements PaxosRMI, Runnable{
      */
     public int Max(){
         // Your code here
-        return 0;
+        int max = -1;
+        if (this.status.isEmpty()) return max;
+        for (int i : this.status.keySet()) {
+            max = Math.max(i, max);
+        }
+        return max;
     }
 
     /**
@@ -332,7 +349,18 @@ public class Paxos implements PaxosRMI, Runnable{
      */
     public int Min(){
         // Your code here
-        return 1;
+        // Find out the minimum done value
+        int min = Integer.MIN_VALUE;
+        for (int seqDone : this.done) {
+            min = Math.min(seqDone, min);
+        }
+
+        // Discard instances with a seq lower than min
+        for (int key : this.status.keySet()) {
+            if (key <= min) this.status.remove(key);
+        }
+
+        return min + 1;
     }
 
 
