@@ -76,91 +76,50 @@ class Test {
 
 	public static void main(String[] args) {
 		Test test = new Test();
-        int npaxos = 5;
+        int npaxos = 3;
 		Paxos[] paxos = test.initPaxos(npaxos);
 
-//        paxos[1].Start(0, "world");
-//        paxos[1].Start(0, "hello");
+        // Custom Test for Forget
+        for(int i = 0; i < npaxos; i++){
+            int m = paxos[i].Min();
+            System.out.println(m);
+        }
+        System.out.println("=============");
 
-        System.out.println("Test: Deaf proposer ...");
-//        System.out.println("=====================================");
-//        paxos[0].Start(0, "hello");
-//        waitn(paxos, 0, npaxos);
-//        for (int i = 0; i < npaxos; i++) {
-//            System.out.println("Server: " + i + ", " + paxos[i].Status(0).state + ", Value: " + paxos[i].Status(0).v);
-//        }
+        paxos[0].Start(0,"00");
+        paxos[1].Start(1,"11");
+        paxos[2].Start(2,"22");
+//        paxos[0].Start(6,"66");
+//        paxos[1].Start(7,"77");
 
+        waitn(paxos, 0, npaxos);
+        waitn(paxos, 1, npaxos);
 
-        System.out.println("=====================================");
-        paxos[1].ports[0]= 1;
-        paxos[1].ports[npaxos-1]= 1;
-        paxos[1].Start(1, "goodbye");
-        waitmajority(paxos, 1);
-        for (int i = 0; i < npaxos; i++) {
-            System.out.println("Server: " + i + ", " + paxos[i].Status(1).state + ", Value: " + paxos[i].Status(1).v);
+        for(int i = 0; i < npaxos; i++){
+            paxos[i].Done(1);
         }
 
-        System.out.println("=====================================");
-        paxos[0].Start(1, "xxx");
+        for(int i = 1; i < npaxos; i++){
+            paxos[i].Done(2);
+        }
+
+        for(int i = 0; i < npaxos; i++){
+            paxos[i].Start(3+i, "xx");
+        }
 
         try {
-            Thread.sleep(10000);
-        } catch (Exception e){
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
             e.printStackTrace();
         }
 
         for (int i = 0; i < npaxos; i++) {
-            System.out.println("Server: " + i + ", " + paxos[i].Status(1).state + ", Value: " + paxos[i].Status(1).v);
+            System.out.println(paxos[i].Min() + " " + paxos[i].Max());
         }
-//        waitn(paxos, 1, npaxos-1); // java.lang.AssertionError: too few decided; seq=1 ndecided=3 wanted=4
 
-//        System.out.println("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
-//        for (int i = 0; i < npaxos; i++) {
-//            System.out.println("Server: " + i + ", " + paxos[i].Status(1).state + ", Value: " + paxos[i].Status(1).v);
-//        }
-//        int nd = ndecided(paxos, 1);
-//        assertFalse("a deaf peer heard about a decision " + nd, nd != npaxos-1);
 
-//        System.out.println("=====================================");
-//        paxos[npaxos-1].Start(1, "yyy");
-//        waitn(paxos, 1, npaxos);
-//        for (int i = 0; i < npaxos; i++) {
-//            System.out.println("Server: " + i + ", " + paxos[i].Status(1).state + ", Value: " + paxos[i].Status(1).v);
-//        }
-//        System.out.println("... Passed");
-//        cleanup(paxos);
-//
-//        int nd = ndecided(paxos, 1);
-//        assertFalse("a deaf peer heard about a decision " + nd, nd != 1);
-//
-//
-//        try {
-//            Thread.sleep(1000);
-//        } catch (InterruptedException e) {
-//            e.printStackTrace();
-//        }
-//
-//        for (int i = 0; i < 3; i++) {
-//            if (paxos[i] != null) {
-//                try {
-//                    System.out.println(paxos[i].Status(2).state + ", Value: " + paxos[i].Status(2).v);
-//                } catch (Exception e) {
-//                    e.printStackTrace();
-//                }
-//
-//            }
-//        }
-//        System.out.println(paxos[0].Status(0).state + " " + paxos[0].Status(0).v);
-//        System.out.println(paxos[1].Status(0).state + " " + paxos[1].Status(0).v);
-//        System.out.println(paxos[2].Status(0).state + " " + paxos[2].Status(0).v);
 
-//        System.out.println("Paxos0 Server0: " + paxos[0].status.get(0).state + ", Value: " + paxos[0].status.get(0).value);
-//        System.out.println("Paxos0 Server1: " + paxos[1].status.get(0).state + ", Value: " + paxos[1].status.get(0).value);
-//        System.out.println("Paxos0 Server2: " + paxos[2].status.get(0).state + ", Value: " + paxos[2].status.get(0).value);
 
-//        System.out.println("Paxos1 Server0: " + paxos[0].status.get(1).state + ", Value: " + paxos[0].status.get(1).value);
-//        System.out.println("Paxos1 Server1: " + paxos[1].status.get(1).state + ", Value: " + paxos[1].status.get(1).value);
-//        System.out.println("Paxos1 Server2: " + paxos[2].status.get(1).state + ", Value: " + paxos[2].status.get(1).value);
 
 	}
 }

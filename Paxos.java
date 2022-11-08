@@ -42,7 +42,10 @@ public class Paxos implements PaxosRMI, Runnable{
     AtomicBoolean unreliable;// for testing
 
     // Your data here
-    HashMap<Integer, PaxosState> status; // vary for different seq (or Paxos Procedures)
+
+    // Contains status information of this,
+    // vary for different seq (or Paxos Procedures)
+    HashMap<Integer, PaxosState> status;
 
     // Contains local memory of max seq of peers that consensus has been reached
     // done[me] = max seq of this
@@ -133,14 +136,11 @@ public class Paxos implements PaxosRMI, Runnable{
      * The application will call Status() to find out if/when agreement
      * is reached.
      */
-
     public void Start(int seq, Object value){ // seq: round
         // Your code here
-//        if (seq < this.min)
         mutex.lock();
         try {
             if (!this.status.containsKey(seq)) {
-//                System.out.println("Entry Set for seq: " + seq + ", idx: " + this.me + " created");
                 this.status.put(seq, new PaxosState(this.me, value, State.Pending, -1));
             } else {
                 if (this.status.get(seq).state != State.Decided) {
@@ -158,18 +158,17 @@ public class Paxos implements PaxosRMI, Runnable{
 
     @Override
     public void run(){
-        //Your code here
+        // Your code here
+
         // Run proposer procedure
-//        System.out.println("Thread Created from server: " + me);
         int seq = Integer.parseInt(Thread.currentThread().getName());
         int totalServers = this.peers.length;
         int maj = totalServers / 2;
         int id = this.status.get(seq).id;
         int maxId = -1;
 
-//        mutex.lock(); // Lock this.status.get(seq) because we need to write it
         while (this.status.get(seq).state != State.Decided) {
-            if (this.isDead()) break;
+            if (this.isDead()) break; // Break when this is dead
             // Choose id
             while (id <= maxId) {
                 id += totalServers;
@@ -190,9 +189,6 @@ public class Paxos implements PaxosRMI, Runnable{
                 }
 
                 if (prepare_OK != null && prepare_OK.accept) {
-//                    if (seq == 1 && this.me == 0) {
-//                        System.out.println(prepare_OK.value);
-//                    }
                     countPrepare++;
                     // Memorize returned value with max id
                     if (prepare_OK.value != null && prepare_OK.id > idA) {
@@ -207,13 +203,12 @@ public class Paxos implements PaxosRMI, Runnable{
                 // Consensus has been reached
                 if (valueA != null) {
                     this.status.get(seq).value = valueA;
-//                    this.status.get(seq).state = State.Decided;
                 }
                 // Send Accept(id, v) to all
                 Request accept = new Request(seq, this.status.get(seq).id, this.status.get(seq).value);
                 int countAccept = 0;
                 for (int i = 0; i < totalServers; i++) {
-                    Response accept_OK = null;
+                    Response accept_OK;
                     if (i != this.me) {
                         accept_OK = Call("Accept", accept, i); // Call through RMI
                     } else {
@@ -233,65 +228,68 @@ public class Paxos implements PaxosRMI, Runnable{
 
             }
         }
-//        mutex.unlock();
-
-
     }
 
     // RMI handler
     public Response Prepare(Request req){
         // your code here
         mutex.lock(); // Lock this
-        // Create Entry Set for myself if I don't have one
-        if (!this.status.containsKey(req.seq)) {
-//            System.out.println("Entry Set for seq: " + req.seq + ", idx: " + this.me + " created");
-            this.status.put(req.seq, new PaxosState(req.seq, null, State.Pending, -1));
+        try {
+            // Create Entry Set for myself if I don't have one
+            if (!this.status.containsKey(req.seq)) {
+                this.status.put(req.seq, new PaxosState(req.seq, null, State.Pending, -1));
+            }
+
+            // Prepare Handler
+            Response prepare_OK;
+            if (req.id > this.status.get(req.seq).promisedId) {
+                this.status.get(req.seq).promisedId = req.id;
+                prepare_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, true, this.done[this.me]);
+            } else prepare_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, false, this.done[this.me]); // Return highest id seen so far
+            return prepare_OK;
+
+        } finally {
+            mutex.unlock();
         }
-
-        // Prepare Handler
-        Response prepare_OK = null;
-//        if (this.me == 1 && req.seq == 1) {
-//            System.out.println(req.id + " " + this.status.get(req.seq).promisedId + " " + this.status.get(req.seq).value);
-//        }
-        if (req.id > this.status.get(req.seq).promisedId) {
-            this.status.get(req.seq).promisedId = req.id;
-            prepare_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, true, this.done[this.me]);
-        } else prepare_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, false, this.done[this.me]); // Return highest id seen so far
-        mutex.unlock();
-        return prepare_OK;
-
     }
 
     public Response Accept(Request req){
         // your code here
         mutex.lock();
-        if (!this.status.containsKey(req.seq)) {
-            System.out.println("Entry Set for seq: " + req.seq + ", idx: " + this.me + " created");
-            this.status.put(req.seq, new PaxosState(req.seq, null, State.Pending, -1));
-        }
+        try {
+            if (!this.status.containsKey(req.seq)) {
+                System.out.println("Entry Set for seq: " + req.seq + ", idx: " + this.me + " created");
+                this.status.put(req.seq, new PaxosState(req.seq, null, State.Pending, -1));
+            }
 
-        Response accept_OK = null;
-        if (req.id >= this.status.get(req.seq).promisedId) {
-            this.status.get(req.seq).promisedId = req.id;
-            this.status.get(req.seq).value = req.value;
-            accept_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, true, this.done[this.me]);
-        } else accept_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, false, this.done[this.me]); // Return highest id seen so far
-        mutex.unlock();
-        return accept_OK;
+            Response accept_OK;
+            if (req.id >= this.status.get(req.seq).promisedId) {
+                this.status.get(req.seq).promisedId = req.id;
+                this.status.get(req.seq).value = req.value;
+                accept_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, true, this.done[this.me]);
+            } else accept_OK = new Response(this.status.get(req.seq).promisedId, this.status.get(req.seq).value, false, this.done[this.me]); // Return highest id seen so far
+            return accept_OK;
+
+        } finally {
+            mutex.unlock();
+        }
     }
 
     public Response Decide(Request req){
         // your code here
         mutex.lock();
-        if (!this.status.containsKey(req.seq)) {
-//            System.out.println("Entry Set for seq: " + req.seq + ", idx: " + this.me + " created");
-            this.status.put(req.seq, new PaxosState(req.seq, null, State.Pending, -1));
+        try {
+            if (!this.status.containsKey(req.seq)) {
+                this.status.put(req.seq, new PaxosState(req.seq, null, State.Pending, -1));
+            }
+            this.status.get(req.seq).promisedId = req.id;
+            this.status.get(req.seq).value = req.value;
+            this.status.get(req.seq).state = State.Decided;
+            return null;
+
+        } finally {
+            mutex.unlock();
         }
-        this.status.get(req.seq).promisedId = req.id;
-        this.status.get(req.seq).value = req.value;
-        this.status.get(req.seq).state = State.Decided;
-        mutex.unlock();
-        return null;
     }
 
     /**
@@ -315,12 +313,18 @@ public class Paxos implements PaxosRMI, Runnable{
      */
     public int Max(){
         // Your code here
-        int maxSeq = -1;
-        if (this.status.isEmpty()) return maxSeq;
-        for (int i : this.status.keySet()) {
-            maxSeq = Math.max(i, maxSeq);
+        mutex.lock();
+        try {
+            int maxSeq = -1;
+            if (this.status.isEmpty()) return maxSeq;
+            for (int i : this.status.keySet()) {
+                maxSeq = Math.max(i, maxSeq);
+            }
+            return maxSeq;
+
+        } finally {
+            mutex.unlock();
         }
-        return maxSeq;
     }
 
     /**
@@ -354,10 +358,9 @@ public class Paxos implements PaxosRMI, Runnable{
     public int Min(){
         // Your code here
         // Find out the minimum done value
-        int minSeq = Integer.MAX_VALUE;
-
+        mutex.lock();
         try {
-            mutex.lock();
+            int minSeq = Integer.MAX_VALUE;
             for (int seqDone : this.done) {
                 minSeq = Math.min(seqDone, minSeq);
             }
@@ -369,12 +372,13 @@ public class Paxos implements PaxosRMI, Runnable{
             while (it.hasNext()) {
                 if (it.next().getKey() < minSeq) it.remove();
             }
+            return minSeq;
+
         } finally {
             mutex.unlock();
 
         }
 
-        return minSeq;
     }
 
 
@@ -388,15 +392,22 @@ public class Paxos implements PaxosRMI, Runnable{
      */
     public retStatus Status(int seq){
         // Your code here
-        retStatus ret = null;
-        if (seq < Min()) {
-            ret = new retStatus(State.Forgotten, null);
-        } else if (!this.status.containsKey(seq)) {
-            ret = new retStatus(State.Pending, null);
-        } else {
-            ret = new retStatus(this.status.get(seq).state, this.status.get(seq).value);
+        mutex.lock();
+        try {
+            retStatus ret;
+            if (seq < Min()) {
+                ret = new retStatus(State.Forgotten, null);
+            } else if (!this.status.containsKey(seq)) {
+                ret = new retStatus(State.Pending, null);
+            } else {
+                ret = new retStatus(this.status.get(seq).state, this.status.get(seq).value);
+            }
+            return ret;
+
+        } finally {
+            mutex.unlock();
         }
-        return ret;
+
     }
 
     /**
